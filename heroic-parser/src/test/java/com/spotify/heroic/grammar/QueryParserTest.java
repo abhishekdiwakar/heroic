@@ -2,6 +2,7 @@ package com.spotify.heroic.grammar;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+
 import com.spotify.heroic.filter.AndFilter;
 import com.spotify.heroic.filter.FalseFilter;
 import com.spotify.heroic.filter.Filter;
@@ -14,7 +15,7 @@ import com.spotify.heroic.filter.RegexFilter;
 import com.spotify.heroic.filter.StartsWithFilter;
 import com.spotify.heroic.filter.TrueFilter;
 import com.spotify.heroic.metric.MetricType;
-import lombok.RequiredArgsConstructor;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.Rule;
 import org.junit.Test;
@@ -27,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+
+import lombok.RequiredArgsConstructor;
 
 import static com.spotify.heroic.grammar.Expression.duration;
 import static com.spotify.heroic.grammar.Expression.empty;
@@ -346,6 +349,9 @@ public class QueryParserTest {
         }
 
         public QueryExpression build() {
+            final Expression select = this.select
+                .orElseThrow(() -> new IllegalStateException("Select is required"));
+
             return new QueryExpression(context, select, source, range, filter, with, as);
         }
     }

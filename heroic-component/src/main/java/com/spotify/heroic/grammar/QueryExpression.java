@@ -24,16 +24,17 @@ package com.spotify.heroic.grammar;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.spotify.heroic.filter.Filter;
 import com.spotify.heroic.metric.MetricType;
-import lombok.Data;
 
 import java.util.Map;
 import java.util.Optional;
+
+import lombok.Data;
 
 @Data
 @JsonTypeName("query")
 public class QueryExpression implements Expression {
     private final Context context;
-    private final Optional<Expression> select;
+    private final Expression select;
     private final Optional<MetricType> source;
     private final Optional<RangeExpression> range;
     private final Optional<Filter> filter;
@@ -45,7 +46,7 @@ public class QueryExpression implements Expression {
         final Map<String, Expression> with = Expression.evalMap(this.with, scope);
         final Map<String, Expression> as = Expression.evalMap(this.as, scope);
 
-        return new QueryExpression(context, select.map(s -> s.eval(scope)), source,
+        return new QueryExpression(context, select.eval(scope), source,
             range.map(r -> r.eval(scope)), filter, with, as);
     }
 
