@@ -158,9 +158,17 @@ public class LocalMetricManager implements MetricManager {
                     LimitedFetchQuotaWatcher::new).orElse(FetchQuotaWatcher.NO_QUOTA);
 
             final LazyTransform<FindSeries, FullQuery> transform = (final FindSeries result) -> {
+                final ResultLimits limits;
+
+                if (result.isLimited()) {
+                    limits = ResultLimits.of(ResultLimit.SERIES);
+                } else {
+                    limits = ResultLimits.of();
+                }
+
                 /* if empty, there are not time series on this shard */
                 if (result.isEmpty()) {
-                    return async.resolved(FullQuery.empty(w.end()));
+                    return async.resolved(FullQuery.empty(w.end(), limits));
                 }
 
                 final long estimate = aggregation.estimate(range);
@@ -185,14 +193,6 @@ public class LocalMetricManager implements MetricManager {
                             .directTransform(d -> Pair.of(s, d)));
                     }
                 });
-
-                final ResultLimits limits;
-
-                if (result.isLimited()) {
-                    limits = ResultLimits.of(ResultLimit.SERIES);
-                } else {
-                    limits = ResultLimits.of();
-                }
 
                 /* setup collector */
 
@@ -361,7 +361,6 @@ public class LocalMetricManager implements MetricManager {
     private abstract static class ResultCollector
         implements StreamCollector<Pair<Series, FetchData>, FullQuery> {
         final ConcurrentLinkedQueue<Throwable> errors = new ConcurrentLinkedQueue<>();
-        final AtomicBoolean quotaViolated = new AtomicBoolean();
 
         final FetchQuotaWatcher watcher;
         final AggregationInstance aggregation;
@@ -381,10 +380,6 @@ public class LocalMetricManager implements MetricManager {
 
         @Override
         public void failed(final Throwable cause) throws Exception {
-            if (cause instanceof QuotaViolationException) {
-                quotaViolated.set(true);
-            }
-
             errors.add(cause);
         }
 
@@ -398,7 +393,7 @@ public class LocalMetricManager implements MetricManager {
         public FullQuery end(int resolved, int failed, int cancelled) throws Exception {
             final QueryTrace trace = buildTrace();
 
-            if (quotaViolated.get()) {
+            if (watcher.isQuotaViolated()) {
                 final List<RequestError> errors = checkIssues(failed, cancelled)
                     .map(QueryError::fromMessage)
                     .map(ImmutableList::of)

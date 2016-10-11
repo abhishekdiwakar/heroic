@@ -3,7 +3,6 @@ package com.spotify.heroic;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-
 import com.spotify.heroic.common.Feature;
 import com.spotify.heroic.common.FeatureSet;
 import com.spotify.heroic.common.Series;
@@ -14,10 +13,10 @@ import com.spotify.heroic.ingestion.IngestionManager;
 import com.spotify.heroic.metric.MetricCollection;
 import com.spotify.heroic.metric.MetricType;
 import com.spotify.heroic.metric.QueryResult;
+import com.spotify.heroic.metric.ResultLimit;
+import com.spotify.heroic.metric.ResultLimits;
 import com.spotify.heroic.metric.ShardedResultGroup;
-
 import eu.toolchain.async.AsyncFuture;
-
 import org.junit.Before;
 import org.junit.Test;
 
@@ -26,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static com.spotify.heroic.test.Data.points;
@@ -35,6 +35,7 @@ import static org.junit.Assume.assumeTrue;
 public abstract class AbstractClusterQueryIT extends AbstractLocalClusterIT {
     private final Series s1 = Series.of("key1", ImmutableMap.of("shared", "a", "diff", "a"));
     private final Series s2 = Series.of("key1", ImmutableMap.of("shared", "a", "diff", "b"));
+    private final Series s3 = Series.of("key1", ImmutableMap.of("shared", "a", "diff", "c"));
 
     private QueryManager query;
 
@@ -73,14 +74,24 @@ public abstract class AbstractClusterQueryIT extends AbstractLocalClusterIT {
     }
 
     public QueryResult query(final String queryString) throws Exception {
-        final Query q = query
-            .newQueryFromString(queryString)
+        return query(query.newQueryFromString(queryString), builder -> {
+        });
+    }
+
+    public QueryResult query(final String queryString, final Consumer<QueryBuilder> modifier)
+        throws Exception {
+        return query(query.newQueryFromString(queryString), modifier);
+    }
+
+    public QueryResult query(final QueryBuilder builder, final Consumer<QueryBuilder> modifier)
+        throws Exception {
+        builder
             .features(Optional.of(FeatureSet.of(Feature.DISTRIBUTED_AGGREGATIONS)))
             .source(Optional.of(MetricType.POINT))
-            .rangeIfAbsent(Optional.of(new QueryDateRange.Absolute(10, 40)))
-            .build();
+            .rangeIfAbsent(Optional.of(new QueryDateRange.Absolute(10, 40)));
 
-        return query.useDefaultGroup().query(q).get();
+        modifier.accept(builder);
+        return query.useDefaultGroup().query(builder.build()).get();
     }
 
     @Test
@@ -164,6 +175,27 @@ public abstract class AbstractClusterQueryIT extends AbstractLocalClusterIT {
 
         assertEquals(ImmutableList.of(10L), cadences);
         assertEquals(ImmutableSet.of(points().p(10, 2D).p(20, 1D).p(30, 1D).p(40, 0D).build()), m);
+    }
+
+    @Test
+    public void dataLimit() throws Exception {
+        final QueryResult result = query("*", builder -> {
+            builder.options(Optional.of(QueryOptions.builder().dataLimit(1L).build()));
+        });
+
+        assertEquals(2, result.getErrors().size());
+        assertEquals(ResultLimits.of(ResultLimit.QUOTA), result.getLimits());
+    }
+
+    @Test
+    public void groupLimit() throws Exception {
+        final QueryResult result = query("*", builder -> {
+            builder.options(Optional.of(QueryOptions.builder().groupLimit(1L).build()));
+        });
+
+        assertEquals(0, result.getErrors().size());
+        assertEquals(ResultLimits.of(ResultLimit.GROUP), result.getLimits());
+        assertEquals(1, result.getGroups().size());
     }
 
     private Set<MetricCollection> getResults(final QueryResult result) {
